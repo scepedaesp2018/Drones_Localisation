@@ -11,8 +11,8 @@
 #define H_FILTER_CONST 0.2f       // lines selection: Algorithm takes [0.5-H_FILTER_CONST,0.5+H_FILTER_CONST]*lines.size();
 #define BLUR_FILTER_SIZE 13       // Kernel Size filter
 #define LENGTH_CROSS_FILTER 15     // Lenght of median filter buffer
-#define ITER_FILT 3               // number of Gaussian filter repetition
-#define PIXELS_PER_LINE 50        // how much pixels must have a detected right line
+#define ITER_FILT 1               // number of Gaussian filter repetition
+#define PIXELS_PER_LINE 40        // how much pixels must have a detected right line
 
 using namespace cv;
 
@@ -22,6 +22,9 @@ const int MaxlowThreshold = 100;
 //Frame size of video
 int H = 42; //inicialized in a random value
 int W = 42;
+// Dron position
+Point Dron_pos(0,0);
+
 
 // buffer for saving the last drone positions for median filter
 std::vector<Point> cruces_filter_buffer(LENGTH_CROSS_FILTER,{0,0});
@@ -45,7 +48,7 @@ return detected_edges;
         lines : vector of detected lines
         points : vector of detected points
 */
-void print_image(Mat & src, Mat & dst, std::vector<Vec2f> & lines, std::vector<Point> & points){
+void print_image(Mat & src, Mat & dst, std::vector<Vec2f> & lines){
   // every line is a vector of his values in Polar representation
 
   Mat withoutlin=dst.clone();
@@ -67,9 +70,7 @@ void print_image(Mat & src, Mat & dst, std::vector<Vec2f> & lines, std::vector<P
   hconcat(src,dst,salida);// hconcat : horiontal concatenation of 2 images
   // ploting  green points
   cvtColor(salida, salida, COLOR_GRAY2BGR);
-  for(auto & p : points){
-    circle(salida, {p.x, p.y} , 5, {0,255,0}, 3);
-  }
+  circle(salida, {Dron_pos.x, Dron_pos.y} , 5, {0,255,0}, 3);
   imshow("Drones detections",salida);
 }
 
@@ -121,10 +122,15 @@ std::vector<Point> cruces_filter(std::vector<Point> & cr){
   return cruces;
 }
 
+void pose_update(std::vector<Point> P){
+    Dron_pos = P[0];
+}
+
 int main( int argc, char** argv )
 {
   // Open video as a imput stream
   VideoCapture cap("../dron.mp4");
+  
   if(!cap.isOpened()){
     std::cout << "Error opening video stream or file" << std::endl;
     return -1;
@@ -132,23 +138,24 @@ int main( int argc, char** argv )
 
   Mat src,dst;
   cap >> src; // get initial frame
-
   // Processing the image
   dst = process(src);
   //actualice its size global values
   H = dst.rows;
   W = dst.cols;
-
+    
   while(1){
+  
     // Capture frame-by-frame
     cap >> src;
 
     // If the frame is empty, break immediately
     if (src.empty())
       break;
-
+    
     // Processing the image
     dst = process(src);
+
 
     std::vector<Vec2f> lines; // will hold the results of the detection
     HoughLines(dst, lines, 1, CV_PI/180, PIXELS_PER_LINE, 0, 0 ); // runs the actual detection
@@ -158,7 +165,7 @@ int main( int argc, char** argv )
     char c=(char)waitKey(25);
     if(c==27)
       break;
-
+    
     if(lines.size()>0){
       Vec2f middle = lines[floor(lines.size()/2)];
 
@@ -174,9 +181,9 @@ int main( int argc, char** argv )
           perpendiculars.push_back(l);
         }
       }
-
+  
       // newl used for plotting
-      std::vector<Vec2f> newl=perpendiculars;
+      std::vector<Vec2f> newl = perpendiculars;
       newl.push_back(middle);
 
       std::vector<Point> cruces;// will hold the results of the crossing point stimation
@@ -187,7 +194,8 @@ int main( int argc, char** argv )
         cruces = find_points(middle,perpendiculars);
         if(cruces.size()>0){
           cruces = cruces_filter(cruces);
-          print_image(src,dst,newl,cruces);
+          pose_update(cruces);
+          print_image(src,dst,newl);
         }
       }else{
 
@@ -203,10 +211,14 @@ int main( int argc, char** argv )
         cruces = find_points(vertical,horizontals);
         if(cruces.size()>0){
           cruces = cruces_filter(cruces);
+          pose_update(cruces);
           horizontals.push_back(vertical);
-          print_image(src,dst,horizontals,cruces);
+          print_image(src,dst,horizontals);
         }
       }
+    }else{
+        std::vector<Vec2f> auxl;
+        print_image(src,dst,auxl);
     }
   }
 
